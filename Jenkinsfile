@@ -44,7 +44,7 @@ pipeline {
             }
         }
 
-        stage('Verify Copied Folder Structure') {
+        stage('Verify Copied Folder Structure and Content') {
             steps {
                 sh '''
                     if [ ! -d "$UAT_RELEASE_PATH/$BCON_FILE" ]; then
@@ -52,16 +52,34 @@ pipeline {
                       exit 1
                     fi
 
-                    find "$DEV_SAVE_PATH/$BCON_FILE" -type f | sed "s|$DEV_SAVE_PATH/$BCON_FILE/||" | sort > dev_files.txt
-                    find "$UAT_RELEASE_PATH/$BCON_FILE" -type f | sed "s|$UAT_RELEASE_PATH/$BCON_FILE/||" | sort > uat_files.txt
+                    (
+                      cd "$DEV_SAVE_PATH"
+                      find "$BCON_FILE" -type d | sort > "$WORKSPACE/dev_dirs.txt"
+                      find "$BCON_FILE" -type f | sort > "$WORKSPACE/dev_files.txt"
+                    )
 
-                    find "$DEV_SAVE_PATH/$BCON_FILE" -type d | sed "s|$DEV_SAVE_PATH/$BCON_FILE/||" | sort > dev_dirs.txt
-                    find "$UAT_RELEASE_PATH/$BCON_FILE" -type d | sed "s|$UAT_RELEASE_PATH/$BCON_FILE/||" | sort > uat_dirs.txt
+                    (
+                      cd "$UAT_RELEASE_PATH"
+                      find "$BCON_FILE" -type d | sort > "$WORKSPACE/uat_dirs.txt"
+                      find "$BCON_FILE" -type f | sort > "$WORKSPACE/uat_files.txt"
+                    )
 
-                    diff -u dev_files.txt uat_files.txt
-                    diff -u dev_dirs.txt uat_dirs.txt
+                    diff -u "$WORKSPACE/dev_dirs.txt" "$WORKSPACE/uat_dirs.txt"
+                    diff -u "$WORKSPACE/dev_files.txt" "$WORKSPACE/uat_files.txt"
 
-                    echo "Folder structure verification passed"
+                    (
+                      cd "$DEV_SAVE_PATH"
+                      find "$BCON_FILE" -type f -exec sha256sum "{}" \\; | sort > "$WORKSPACE/dev_checksums.txt"
+                    )
+
+                    (
+                      cd "$UAT_RELEASE_PATH"
+                      find "$BCON_FILE" -type f -exec sha256sum "{}" \\; | sort > "$WORKSPACE/uat_checksums.txt"
+                    )
+
+                    diff -u "$WORKSPACE/dev_checksums.txt" "$WORKSPACE/uat_checksums.txt"
+
+                    echo "Folder structure and content verification passed"
                 '''
             }
         }
@@ -95,7 +113,13 @@ pipeline {
                     mkdir -p artifacts/release artifacts/logs artifacts/verification
                     cp -r "$UAT_RELEASE_PATH/$BCON_FILE" artifacts/release/
                     cp "$UAT_LOG_PATH/$BCON_FILE.log" artifacts/logs/
-                    cp dev_files.txt uat_files.txt dev_dirs.txt uat_dirs.txt artifacts/verification/
+
+                    cp "$WORKSPACE/dev_dirs.txt" artifacts/verification/
+                    cp "$WORKSPACE/uat_dirs.txt" artifacts/verification/
+                    cp "$WORKSPACE/dev_files.txt" artifacts/verification/
+                    cp "$WORKSPACE/uat_files.txt" artifacts/verification/
+                    cp "$WORKSPACE/dev_checksums.txt" artifacts/verification/
+                    cp "$WORKSPACE/uat_checksums.txt" artifacts/verification/
                 '''
             }
         }
